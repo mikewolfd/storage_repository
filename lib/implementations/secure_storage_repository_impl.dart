@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
@@ -52,26 +53,51 @@ class SecureStorageRepositoryImpl extends StorageRepositoryImpl
 
     // If no encryption key exists, generate a new one and store it securely.
     if (!containsEncryptionKey) {
-      final secureEncryptionKey = base64UrlEncode(Hive.generateSecureKey());
+      final secureEncryptionKey = base64UrlEncode(generateSecureKey());
       await flutterSecureStorage.write(
           key: encryptionKeyStorageKey, value: secureEncryptionKey);
     }
 
-    // Retrieve and decode the encryption key for Hive storage.
-    final encryptionKeyValue = base64Url.decode(
-        await flutterSecureStorage.read(key: encryptionKeyStorageKey) ?? '');
+    // Retrieve the encryption key for Hive storage.
+    final encryptionKeyValue =
+        await flutterSecureStorage.read(key: encryptionKeyStorageKey) ?? '';
 
-    // Open a Hive box with AES encryption.
-    storage = await Hive.openBox(key,
-        encryptionCipher: HiveAesCipher(encryptionKeyValue));
+    // Open a Hive box with encryption using Hive.compute().
+    final result = await Hive.compute(() async {
+      try {
+        // Open the encrypted box with the encryption key
+        return Hive.box(name: key, encryptionKey: encryptionKeyValue);
+      } catch (e) {
+        // If opening fails, try to delete the corrupted box and retry
+        try {
+          final boxToDelete = Hive.box(name: key);
+          boxToDelete.deleteFromDisk();
+        } catch (_) {
+          // Ignore deletion errors
+        }
 
+        // Retry opening the box
+        return Hive.box(name: key, encryptionKey: encryptionKeyValue);
+      }
+    });
+
+    storage = result;
     return this;
   }
 
   /// Generates a strong 32-byte (256-bit) encryption key for secure storage.
   ///
-  /// This method should be used to create secure keys when needed.
-  static List<int> generateSecureKey() => Hive.generateSecureKey();
+  /// This method uses Dart's cryptographically secure random number generator
+  /// to create a proper AES-256 encryption key.
+  static List<int> generateSecureKey() {
+    // Generate 32 cryptographically secure random bytes for AES-256
+    final secureRandom = Random.secure();
+    final key = Uint8List(32);
+    for (int i = 0; i < 32; i++) {
+      key[i] = secureRandom.nextInt(256);
+    }
+    return key;
+  }
 
   /// Returns the stored data as a formatted string.
   ///

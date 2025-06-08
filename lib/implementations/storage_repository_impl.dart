@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive/hive.dart';
 import 'package:storage_repository/constants/storage_repository_keys.dart';
 import 'package:storage_repository/interfaces/storage_repository.dart';
 
@@ -38,20 +38,31 @@ class StorageRepositoryImpl implements StorageRepository {
   /// Returns an instance of [StorageRepository] once initialized.
   @override
   Future<StorageRepository> init() async {
-    try {
-      // Attempt to open the Hive storage box.
-      storage = await Hive.openBox(key);
-    } catch (e) {
-      debugPrint(e.toString());
-
-      // If an error occurs, delete the storage box and retry opening it.
-      Hive.deleteBoxFromDisk(key);
+    final result = await Hive.compute(() async {
       try {
-        storage = await Hive.openBox(key);
+        // Attempt to open the Hive storage box.
+        return Hive.box(name: key);
       } catch (e) {
         debugPrint(e.toString());
+
+        // If an error occurs, delete the storage box and retry opening it.
+        try {
+          final boxToDelete = Hive.box(name: key);
+          boxToDelete.deleteFromDisk();
+        } catch (_) {
+          // Ignore deletion errors
+        }
+        
+        try {
+          return Hive.box(name: key);
+        } catch (e) {
+          debugPrint(e.toString());
+          rethrow;
+        }
       }
-    }
+    });
+    
+    storage = result;
     return this;
   }
 
@@ -63,15 +74,17 @@ class StorageRepositoryImpl implements StorageRepository {
   /// Returns `true` if the operation was successful, otherwise `false`.
   @override
   Future<bool> set(dynamic key, dynamic value) async {
-    try {
-      // Convert value to JSON format before storing.
-      final encodedValue = json.encode(value);
-      await storage.put(key, encodedValue);
-      return true;
-    } catch (e) {
-      debugPrint('$logPrefix exception: $e');
-      return false;
-    }
+    return await Hive.compute(() async {
+      try {
+        // Access the same box from the isolate
+        final box = Hive.box(name: this.key);
+        box.put(key, value);
+        return true;
+      } catch (e) {
+        debugPrint('$logPrefix exception: $e');
+        return false;
+      }
+    });
   }
 
   /// Retrieves the value stored under the given key.
@@ -108,20 +121,23 @@ class StorageRepositoryImpl implements StorageRepository {
   /// Returns a `Map<String, dynamic>` containing all stored data.
   @override
   Future<Map<String, dynamic>> getAll() async {
-    final entries = storage.keys.map(
-      (key) {
-        final encodedValue = storage.get(key);
+    return await Hive.compute(() async {
+      final box = Hive.box(name: key);
+      final entries = box.keys.map(
+        (key) {
+          final encodedValue = box.get(key);
 
-        return MapEntry<String, dynamic>(
-          key,
-          (encodedValue == null || encodedValue is! String)
-              ? encodedValue
-              : json.decode(encodedValue),
-        );
-      },
-    );
+          return MapEntry<String, dynamic>(
+            key,
+            (encodedValue == null || encodedValue is! String)
+                ? encodedValue
+                : json.decode(encodedValue),
+          );
+        },
+      );
 
-    return Map.fromEntries(entries);
+      return Map.fromEntries(entries);
+    });
   }
 
   /// Checks if a given key exists in the storage.
@@ -131,7 +147,11 @@ class StorageRepositoryImpl implements StorageRepository {
   /// Returns `true` if the key exists, otherwise `false`.
   @override
   Future<bool> contains(dynamic key) async {
-    return key != null && storage.containsKey(key);
+    return await Hive.compute(() async {
+      if (key == null) return false;
+      final box = Hive.box(name: this.key);
+      return box.containsKey(key);
+    });
   }
 
   /// Deletes an item from storage using the given key.
@@ -141,13 +161,16 @@ class StorageRepositoryImpl implements StorageRepository {
   /// Returns `true` if deletion was successful, otherwise `false`.
   @override
   Future<bool> delete(dynamic key) async {
-    try {
-      await storage.delete(key);
-      return true;
-    } catch (e) {
-      debugPrint('$logPrefix exception: $e');
-      return false;
-    }
+    return await Hive.compute(() async {
+      try {
+        final box = Hive.box(name: this.key);
+        box.delete(key);
+        return true;
+      } catch (e) {
+        debugPrint('$logPrefix exception: $e');
+        return false;
+      }
+    });
   }
 
   /// **Use with caution**
@@ -157,13 +180,16 @@ class StorageRepositoryImpl implements StorageRepository {
   /// Returns `true` if successful, otherwise `false`.
   @override
   Future<bool> clear() async {
-    try {
-      await storage.clear();
-      return true;
-    } catch (e) {
-      debugPrint('$logPrefix exception: $e');
-      return false;
-    }
+    return await Hive.compute(() async {
+      try {
+        final box = Hive.box(name: this.key);
+        box.clear();
+        return true;
+      } catch (e) {
+        debugPrint('$logPrefix exception: $e');
+        return false;
+      }
+    });
   }
 
   /// Logs all stored data to the console.

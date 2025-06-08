@@ -1,4 +1,6 @@
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
+import 'package:path_provider/path_provider.dart';
 
 /// Abstract class for the storage repository, serving as an interface
 /// for dependency injection (DI) patterns.
@@ -64,5 +66,9 @@ abstract class StorageRepository {
   /// Initializes Hive for Flutter.
   ///
   /// This method should be called early in the app lifecycle to set up Hive storage.
-  static Future<void> initFlutter() async => await Hive.initFlutter();
+  static Future<void> initFlutter() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    final directory = await getApplicationDocumentsDirectory();
+    Hive.defaultDirectory = directory.path;
+  }
 }
