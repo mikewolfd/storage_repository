@@ -10,7 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   hive: ^4.0.0-dev.2
-  isar_flutter_libs: ^4.0.0-dev.13
+  isar_flutter_libs: ^4.0.0-dev.14
   flutter_secure_storage: ^10.0.0-beta.4
   path_provider: ^2.1.5
   crypto: ^3.0.6

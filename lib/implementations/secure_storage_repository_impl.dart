@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
@@ -62,26 +63,23 @@ class SecureStorageRepositoryImpl extends StorageRepositoryImpl
     final encryptionKeyValue =
         await flutterSecureStorage.read(key: encryptionKeyStorageKey) ?? '';
 
-    // Open a Hive box with encryption using Hive.compute().
-    final result = await Hive.compute(() async {
+    // Open a Hive box with encryption
+    try {
+      // Open the encrypted box with the encryption key
+      storage = Hive.box(name: key, encryptionKey: encryptionKeyValue);
+    } catch (e) {
+      // If opening fails, try to delete the corrupted box and retry
       try {
-        // Open the encrypted box with the encryption key
-        return Hive.box(name: key, encryptionKey: encryptionKeyValue);
-      } catch (e) {
-        // If opening fails, try to delete the corrupted box and retry
-        try {
-          final boxToDelete = Hive.box(name: key);
-          boxToDelete.deleteFromDisk();
-        } catch (_) {
-          // Ignore deletion errors
-        }
-
-        // Retry opening the box
-        return Hive.box(name: key, encryptionKey: encryptionKeyValue);
+        final boxToDelete = Hive.box(name: key);
+        boxToDelete.deleteFromDisk();
+      } catch (_) {
+        // Ignore deletion errors
       }
-    });
 
-    storage = result;
+      // Retry opening the box
+      storage = Hive.box(name: key, encryptionKey: encryptionKeyValue);
+    }
+
     return this;
   }
 
